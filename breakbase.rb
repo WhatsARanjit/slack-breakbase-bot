@@ -4,6 +4,7 @@ require 'slack'
 require 'net/http'
 require 'uri'
 require 'json'
+require 'yaml'
 require 'pry'
 
 # Use a cookie written to filesystem if exists
@@ -16,13 +17,25 @@ def set_cookie
   end
 end
 
-@breakbase_game_id = 'gBdrvdKcR'
+def yaml(file_path)
+  YAML.load_file(file_path)
+  rescue Exception => err
+    puts "YAML invalid: #{file_path}"
+    raise "#{err}"
+end
+
+# Moving user-specific data to yaml
+@config            = yaml('config.yaml')
+@channel           = @config['channel']            || '#general'
+@breakbase_game_id = @config['breakbase_game_id']
+@interval          = @config['interval']           || 600
+@token             = @config['token']
+
 @breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
 @breakbase_enter   = "http://breakbase.com/room/#{@breakbase_game_id}/enter"
 @breakbase_cookie  = set_cookie
 @game_hash         = {}
 @current_player    = ''
-@interval          = 60*10
 
 def current_player_id
   id = @game_hash['game']['next_move']['player']
@@ -83,14 +96,14 @@ end
 
 def notify_chat(player)
   Slack.configure do |config|
-    config.token = 'xoxb-9079698100-rCRowc3JivZ0xgYY0BYWEWCg'
+    config.token = @token
   end
 
   client = Slack::Client.new
 
   message = {
     #:channel  => '@whatsaranjit',
-    :channel  => '#general',
+    :channel  => @channel,
     :username => 'breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
     :text     => "It's #{player}'s turn on BreakBase: #{@breakbase_url}",
