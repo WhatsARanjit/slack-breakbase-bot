@@ -18,7 +18,7 @@ end
 
 @breakbase_game_id = 'gBdrvdKcR'
 @breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
-@breakbase_enter   = "ttp://breakbase.com/room/#{@breakbase_game_id}/enter"
+@breakbase_enter   = "http://breakbase.com/room/#{@breakbase_game_id}/enter"
 @breakbase_cookie  = set_cookie
 @game_hash         = {}
 @current_player    = ''
