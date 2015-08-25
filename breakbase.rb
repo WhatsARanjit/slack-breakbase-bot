@@ -5,7 +5,6 @@ require 'net/http'
 require 'uri'
 require 'json'
 require 'yaml'
-require 'pry'
 
 # Use a cookie written to filesystem if exists
 def set_cookie
@@ -29,6 +28,7 @@ end
 @channel           = @config['channel']            || '#general'
 @breakbase_game_id = @config['breakbase_game_id']
 @interval          = @config['interval']           || 600
+@reminder          = @config['reminder']           || 21600
 @token             = @config['token']
 
 @breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
@@ -36,14 +36,15 @@ end
 @breakbase_cookie  = set_cookie
 @game_hash         = {}
 @current_player    = ''
+@timer             = 0
 
 def current_player_id
-  id = @game_hash['game']['next_move']['player']
-  @game_hash['seated'][id]
+  id = @game_hash['game']['turn']
+  @game_hash['game']['players'][id]
 end
 
 def player_name(id)
-  @game_hash['users'][id]['name']  
+  @game_hash['users'][id]['name']
 end
 
 def check_player(player)
@@ -94,6 +95,14 @@ def parse_html(html)
   JSON.parse(cleanup)
 end
 
+def find_mention(player)
+  if @config['mentions'][player]
+    " <@#{@config['mentions'][player]}>"
+  else
+    false
+  end
+end
+
 def notify_chat(player)
   Slack.configure do |config|
     config.token = @token
@@ -106,7 +115,7 @@ def notify_chat(player)
     :channel  => @channel,
     :username => 'breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
-    :text     => "It's #{player}'s turn on BreakBase: #{@breakbase_url}",
+    :text     => "It's #{player}'s turn on BreakBase: #{@breakbase_url}#{find_mention(player)}",
   }
 
   client.chat_postMessage(message)
@@ -121,7 +130,7 @@ def do_it
     @breakbase_cookie = get_cookie(enter_button['Set-Cookie'])
   end
   get_game            = bbase_get(@breakbase_url)
-  puts get_game.code
+  #puts get_game.code
 
   # If successful login, remember cookie
   if get_game.code == '200'
@@ -132,14 +141,26 @@ def do_it
 
   @game_hash = parse_html(get_game.body)
 
-  unless check_player(current_player_id)
+  if ! check_player(current_player_id)
     @current_player = current_player_id
-    #puts "New current player: #{player_name(current_player_id)}"
     notify_chat(player_name(current_player_id))
+    puts "New current player: #{player_name(current_player_id)}"
+  elsif @timer >= @reminder
+    notify_chat(player_name(current_player_id))
+    puts "Current player: #{player_name(current_player_id)}"
+    @timer = 0
+  else
+    puts "Current player: #{player_name(current_player_id)}"
   end
 end
 
 while true do
-  do_it
+  begin
+    do_it
+  rescue Exception => e
+    puts e.message
+    puts e.backtrace.inspect
+  end
   sleep @interval
+  @timer =+ @interval
 end
