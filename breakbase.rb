@@ -91,7 +91,8 @@ end
 def parse_html(html)
   # Grab the JSON part and cut off the notes (not real JSON)
   cleanup1 = html.match(/RoomMgr\.create\((.*)\)/)[1]
-  cleanup  = cleanup1.split(',', 3)[2].gsub(/, \[{"note":.*/, '')
+  cleanup2 = cleanup1.split(',', 3)[2].gsub(/, \[{"msg":.*/, '')
+  cleanup  = cleanup2.gsub(/, \[{"note":.*/, '')
   JSON.parse(cleanup)
 end
 
@@ -99,7 +100,7 @@ def find_mention(player)
   if @config['mentions'][player]
     " <@#{@config['mentions'][player]}>"
   else
-    false
+    nil
   end
 end
 
@@ -120,6 +121,7 @@ def notify_chat(player)
 
   client.chat_postMessage(message)
   #client.auth_test
+  @timer = 0
 end
 
 def do_it
@@ -140,15 +142,13 @@ def do_it
   end
 
   @game_hash = parse_html(get_game.body)
-
   if ! check_player(current_player_id)
     @current_player = current_player_id
     notify_chat(player_name(current_player_id))
     puts "New current player: #{player_name(current_player_id)}"
   elsif @timer >= @reminder
     notify_chat(player_name(current_player_id))
-    puts "Current player: #{player_name(current_player_id)}"
-    @timer = 0
+    puts "Reminded player: #{player_name(current_player_id)}"
   else
     puts "Current player: #{player_name(current_player_id)}"
   end
@@ -160,7 +160,8 @@ while true do
   rescue Exception => e
     puts e.message
     puts e.backtrace.inspect
+  else
+    sleep @interval
+    @timer += @interval
   end
-  sleep @interval
-  @timer =+ @interval
 end
