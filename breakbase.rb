@@ -55,6 +55,14 @@ def check_player(player)
   end
 end
 
+def check_new_game
+  if @game_hash['request']['type'] == 'new_game'
+    return true
+  else
+    return false
+  end
+end
+
 def get_cookie(set_cookie_string)
   #set_cookie_string.split('; ')[0].gsub(/breakbase=/, '')
   set_cookie_string.split('; ')[0]
@@ -112,7 +120,6 @@ def notify_chat(player)
   client = Slack::Client.new
 
   message = {
-    #:channel  => '@whatsaranjit',
     :channel  => @channel,
     :username => 'breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
@@ -122,6 +129,32 @@ def notify_chat(player)
   client.chat_postMessage(message)
   #client.auth_test
   @timer = 0
+end
+
+def notify_new
+  Slack.configure do |config|
+    config.token = @token
+  end
+
+  client     = Slack::Client.new
+  list_ids   = @game_hash['seated'] - @game_hash['request']['responses']
+  list_names = ''
+
+  list_ids.each do |id|
+    list_names = "#{list_names}#{find_mention(player_name(id))}"
+  end
+
+  message = {
+    :channel  => @channel,
+    :username => 'breakbase',
+    :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
+    :text     => "New game on BreakBase: #{@breakbase_url}#{list_names}",
+  }
+
+  client.chat_postMessage(message)
+  #client.auth_test
+  @timer = 0
+  return list_names
 end
 
 def do_it
@@ -142,7 +175,9 @@ def do_it
   end
 
   @game_hash = parse_html(get_game.body)
-  if ! check_player(current_player_id)
+  if check_new_game
+    puts "New game; notified:#{notify_new}"
+  elsif ! check_player(current_player_id)
     @current_player = current_player_id
     notify_chat(player_name(current_player_id))
     puts "New current player: #{player_name(current_player_id)}"
