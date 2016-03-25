@@ -29,6 +29,7 @@ end
 @breakbase_game_id = @config['breakbase_game_id']
 @interval          = @config['interval']           || 600
 @reminder          = @config['reminder']           || 21600
+@new_reminder      = @config['new_reminder']       || 3600
 @token             = @config['token']
 
 @breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
@@ -56,11 +57,22 @@ def check_player(player)
 end
 
 def check_new_game
-  if @game_hash['request']['type'] == 'new_game'
-    return true
-  else
+  begin
+    new = @game_hash['request']['type']
+  rescue NoMethodError => e
     return false
+  else
+    return true if new == 'new_game'
   end
+end
+
+def last_move
+  words_a  = @game_hash['game']['next_move']['words']
+  words_s  = words_a.join(', ').upcase
+  score    = @game_hash['game']['next_move']['total_points']
+  player_i = @game_hash['game']['next_move']['player']
+  player   = player_name(@game_hash['seated'][player_i])
+  return "\n#{player} played #{words_s} for #{score} points."
 end
 
 def get_cookie(set_cookie_string)
@@ -112,18 +124,20 @@ def find_mention(player)
   end
 end
 
-def notify_chat(player)
+def notify_chat(player, score=false)
   Slack.configure do |config|
     config.token = @token
   end
 
   client = Slack::Client.new
+  text   = "It's #{player}'s turn on BreakBase: #{@breakbase_url}#{find_mention(player)}"
+  text  += last_move if score
 
   message = {
     :channel  => @channel,
     :username => 'breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
-    :text     => "It's #{player}'s turn on BreakBase: #{@breakbase_url}#{find_mention(player)}",
+    :text     => text,
   }
 
   client.chat_postMessage(message)
@@ -152,8 +166,7 @@ def notify_new
   }
 
   client.chat_postMessage(message)
-  #client.auth_test
-  @timer = 0
+  @timer = 1
   return list_names
 end
 
@@ -176,16 +189,18 @@ def do_it
 
   @game_hash = parse_html(get_game.body)
   if check_new_game
-    puts "New game; notified:#{notify_new}"
+    if (@timer == 0) || (@timer >= @new_reminder)
+      puts "[#{Time.now}] New game; notified:#{notify_new}"
+    end
   elsif ! check_player(current_player_id)
     @current_player = current_player_id
-    notify_chat(player_name(current_player_id))
-    puts "New current player: #{player_name(current_player_id)}"
+    notify_chat(player_name(current_player_id), true)
+    puts "[#{Time.now}] New current player: #{player_name(current_player_id)}"
   elsif @timer >= @reminder
     notify_chat(player_name(current_player_id))
-    puts "Reminded player: #{player_name(current_player_id)}"
+    puts "[#{Time.now}] Reminded player: #{player_name(current_player_id)}"
   else
-    puts "Current player: #{player_name(current_player_id)}"
+    puts "[#{Time.now}] Current player: #{player_name(current_player_id)}"
   end
 end
 
@@ -199,4 +214,6 @@ while true do
     sleep @interval
     @timer += @interval
   end
+  # Debugging
+  exit 0
 end
