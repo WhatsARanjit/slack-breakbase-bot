@@ -68,11 +68,11 @@ end
 
 def last_move
   words_a  = @game_hash['game']['next_move']['words']
-  words_s  = words_a.join(', ').upcase
   score    = @game_hash['game']['next_move']['total_points']
   player_i = @game_hash['game']['next_move']['player']
   player   = player_name(@game_hash['seated'][player_i])
-  return "\n#{player} played #{words_s} for #{score} points."
+  #return "\n#{player} played #{words_s} for #{score} points."
+  return [player, words_a, score]
 end
 
 def get_cookie(set_cookie_string)
@@ -118,9 +118,9 @@ end
 
 def find_mention(player)
   if @config['mentions'][player]
-    " <@#{@config['mentions'][player]}>"
+    "<@#{@config['mentions'][player]}>"
   else
-    nil
+    player
   end
 end
 
@@ -130,15 +130,36 @@ def notify_chat(player, score=false)
   end
 
   client = Slack::Client.new
-  text   = "It's #{player}'s turn on BreakBase: #{@breakbase_url}#{find_mention(player)}"
-  text  += last_move if score
+  text   = "It's #{find_mention(player)}'s turn on BreakBase: #{@breakbase_url}"
 
   message = {
     :channel  => @channel,
-    :username => 'breakbase',
+    :username => 'Breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
     :text     => text,
   }
+
+  if score
+    previous    = last_move[0]
+    words_a     = last_move[1]
+    words_s     = words_a.join(', ').upcase
+    points      = last_move[2]
+    message_raw = [
+      {
+        'fallback'   => "#{previous} played #{words_s} for #{score} points.",
+        'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
+        'text'       => "#{previous} played #{words_s} for #{score} points.",
+        'color'      => 'good',
+        'title'      => 'BreakBase',
+        'title_link' => @breakbase_url,
+        'thumb_url'  => "http://whatsaranjit.com/letters.php?text=#{words_a.first[0].upcase}"
+
+      }
+    ]
+
+    message[:text]        = ''
+    message[:attachments] = message_raw.to_json
+  end
 
   client.chat_postMessage(message)
   #client.auth_test
@@ -155,12 +176,12 @@ def notify_new
   list_names = ''
 
   list_ids.each do |id|
-    list_names = "#{list_names}#{find_mention(player_name(id))}"
+    list_names = "#{list_names} #{find_mention(player_name(id))}"
   end
 
   message = {
     :channel  => @channel,
-    :username => 'breakbase',
+    :username => 'Breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
     :text     => "New game on BreakBase: #{@breakbase_url}#{list_names}",
   }
@@ -215,5 +236,5 @@ while true do
     @timer += @interval
   end
   # Debugging
-  exit 0
+  #exit 0
 end
