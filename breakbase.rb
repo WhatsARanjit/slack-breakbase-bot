@@ -19,7 +19,7 @@ end
 def yaml(file_path)
   YAML.load_file(file_path)
   rescue Exception => err
-    puts "YAML invalid: #{file_path}"
+    $stederr.puts "YAML invalid: #{file_path}"
     raise "#{err}"
 end
 
@@ -70,13 +70,11 @@ def last_move
   words_a  = @game_hash['game']['next_move']['words']
   score    = @game_hash['game']['next_move']['total_points']
   player_i = @game_hash['game']['next_move']['player']
-  player   = player_name(@game_hash['seated'][player_i])
-  #return "\n#{player} played #{words_s} for #{score} points."
+  player   = player_name(@game_hash['game']['players'][player_i])
   return [player, words_a, score]
 end
 
 def get_cookie(set_cookie_string)
-  #set_cookie_string.split('; ')[0].gsub(/breakbase=/, '')
   set_cookie_string.split('; ')[0]
 end
 
@@ -140,15 +138,16 @@ def notify_chat(player, score=false)
   }
 
   if score
-    previous    = last_move[0]
-    words_a     = last_move[1]
+    last_move_a = last_move
+    previous    = last_move_a[0]
+    words_a     = last_move_a[1]
     words_s     = words_a.join(', ').upcase
-    points      = last_move[2]
+    points      = last_move_a[2]
     message_raw = [
       {
-        'fallback'   => "#{previous} played #{words_s} for #{score} points.",
+        'fallback'   => "#{previous} played #{words_s} for #{points} points.",
         'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
-        'text'       => "#{previous} played #{words_s} for #{score} points.",
+        'text'       => "#{previous} played #{words_s} for #{points} points.",
         'color'      => 'good',
         'title'      => 'BreakBase',
         'title_link' => @breakbase_url,
