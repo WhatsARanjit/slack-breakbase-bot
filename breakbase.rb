@@ -137,6 +137,28 @@ def notify_chat(player, score=false)
     :text     => text,
   }
 
+  # Check if pass happened
+  if @game_hash['game']['next_move']['type'] == 'pass'
+
+    score          = false
+    last_move_a    = last_move
+    previous       = last_move_a[0]
+    message_raw = [
+      {
+        'fallback'   => "#{previous} passed.",
+        'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
+        'text'       => "#{previous} passed.",
+        'color'      => 'bad',
+        'title'      => 'BreakBase',
+        'title_link' => @breakbase_url,
+
+      }
+    ]
+
+    message[:text]        = ''
+    message[:attachments] = message_raw.to_json
+  end
+
   if score
     last_move_a = last_move
     previous    = last_move_a[0]
