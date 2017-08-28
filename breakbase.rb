@@ -5,6 +5,7 @@ require 'net/http'
 require 'uri'
 require 'json'
 require 'yaml'
+require 'time'
 
 # Use a cookie written to filesystem if exists
 def set_cookie
@@ -31,6 +32,8 @@ end
 @reminder          = @config['reminder']           || 21600
 @new_reminder      = @config['new_reminder']       || 3600
 @token             = @config['token']
+@quiet_hours       = @config['quiet_hours']        || ['21:00', '9:00']
+@tz                = @config['timezone']           || '-04:00'
 
 @breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
 @breakbase_enter   = "http://breakbase.com/room/#{@breakbase_game_id}/enter"
@@ -38,6 +41,25 @@ end
 @game_hash         = {}
 @current_player    = ''
 @timer             = 0
+
+def quiet_hours?
+  ret = false
+  now = Time.now.getlocal(@tz)
+  @quiet_hours.flatten.each_slice(2) do |hours|
+    qstart = hours.first
+    qend   = hours.last
+    if Time.parse("#{qstart} #{@tz}") > Time.parse("#{qend} #{@tz}")
+      if ( now > Time.parse("#{qstart} #{@tz}") && now < Time.parse("24:00 #{@tz}") ) || ( now > Time.parse("0:00 #{@tz}") && now < Time.parse("#{qend} #{@tz}") )
+        ret = true
+      end
+    else
+      if ( now > Time.parse("#{qstart} #{@tz}") && now < Time.parse("#{qend} #{@tz}") )
+        ret = true
+      end
+    end
+  end
+  ret
+end
 
 def current_player_id
   id = @game_hash['game']['turn']
@@ -138,48 +160,85 @@ def notify_chat(player, score=false)
   }
 
   # Check if pass happened
-  if @game_hash['game']['next_move']['type'] == 'pass'
+  begin
+    $pass = @game_hash['game']['next_move']['type']
+  rescue
+    $pass = false
+  end
 
-    score          = false
-    last_move_a    = last_move
-    previous       = last_move_a[0]
-    message_raw = [
-      {
-        'fallback'   => "#{previous} passed.",
-        'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
-        'text'       => "#{previous} passed.",
-        'color'      => 'bad',
-        'title'      => 'BreakBase',
-        'title_link' => @breakbase_url,
+  if $pass == 'pass'
+    begin
+      score          = false
+      last_move_a    = last_move
+      previous       = last_move_a[0]
+      message_raw = [
+        {
+          'fallback'   => "#{previous} passed.",
+          'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
+          'text'       => "#{previous} passed.",
+          'color'      => 'bad',
+          'title'      => 'BreakBase',
+          'title_link' => @breakbase_url,
 
-      }
-    ]
+        }
+      ]
 
-    message[:text]        = ''
-    message[:attachments] = message_raw.to_json
+      message[:text]        = ''
+      message[:attachments] = message_raw.to_json
+    rescue => e
+      puts "ERROR: #{e}"
+    end
+  elsif $pass == 'swap'
+    begin
+      score          = false
+      last_move_a    = last_move
+      previous       = last_move_a[0]
+      num_letters    = @game_hash['game']['next_move']['num_letters']
+      plural         = num_letters.to_i > 1 ? 's' : ''
+      message_raw = [
+        {
+          'fallback'   => "#{previous} swapped #{num_letters} letter#{plural}.",
+          'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
+          'text'       => "#{previous} swapped #{num_letters} letter#{plural}.",
+          'color'      => 'bad',
+          'title'      => 'BreakBase',
+          'title_link' => @breakbase_url,
+
+        }
+      ]
+
+      message[:text]        = ''
+      message[:attachments] = message_raw.to_json
+    rescue => e
+      puts "ERROR: #{e}"
+    end
   end
 
   if score
-    last_move_a = last_move
-    previous    = last_move_a[0]
-    words_a     = last_move_a[1]
-    words_s     = words_a.join(', ').upcase
-    points      = last_move_a[2]
-    message_raw = [
-      {
-        'fallback'   => "#{previous} played #{words_s} for #{points} points.",
-        'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
-        'text'       => "#{previous} played #{words_s} for #{points} points.",
-        'color'      => 'good',
-        'title'      => 'BreakBase',
-        'title_link' => @breakbase_url,
-        'thumb_url'  => "http://whatsaranjit.com/letters.php?text=#{words_a.first[0].upcase}"
+    begin
+      last_move_a = last_move
+      previous    = last_move_a[0]
+      words_a     = last_move_a[1]
+      words_s     = words_a.join(', ').upcase
+      points      = last_move_a[2]
+      message_raw = [
+        {
+          'fallback'   => "#{previous} played #{words_s} for #{points} points.",
+          'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
+          'text'       => "#{previous} played #{words_s} for #{points} points.",
+          'color'      => 'good',
+          'title'      => 'BreakBase',
+          'title_link' => @breakbase_url,
+          'thumb_url'  => "http://whatsaranjit.com/letters.php?text=#{words_a.first[0].upcase}"
 
-      }
-    ]
+        }
+      ]
 
-    message[:text]        = ''
-    message[:attachments] = message_raw.to_json
+      message[:text]        = ''
+      message[:attachments] = message_raw.to_json
+    rescue => e
+      puts "ERROR: #{e}"
+    end
   end
 
   client.chat_postMessage(message)
@@ -232,15 +291,30 @@ def do_it
   @game_hash = parse_html(get_game.body)
   if check_new_game
     if (@timer == 0) || (@timer >= @new_reminder)
-      puts "[#{Time.now}] New game; notified:#{notify_new}"
+      unless quiet_hours?
+        puts "[#{Time.now}] New game; notified:#{notify_new}"
+      else
+        @timer = @new_reminder - 600
+        puts "[#{Time.now}] Quiet hours; new game supressed"
+      end
     end
   elsif ! check_player(current_player_id)
     @current_player = current_player_id
-    notify_chat(player_name(current_player_id), true)
-    puts "[#{Time.now}] New current player: #{player_name(current_player_id)}"
+    unless quiet_hours?
+      notify_chat(player_name(current_player_id), true)
+      puts "[#{Time.now}] New current player: #{player_name(current_player_id)}"
+    else
+      @timer = @reminder - 3600
+      puts "[#{Time.now}] Quiet hours: New current player: #{player_name(current_player_id)}"
+    end
   elsif @timer >= @reminder
-    notify_chat(player_name(current_player_id))
-    puts "[#{Time.now}] Reminded player: #{player_name(current_player_id)}"
+    unless quiet_hours?
+      notify_chat(player_name(current_player_id))
+      puts "[#{Time.now}] Reminded player: #{player_name(current_player_id)}"
+    else
+      @timer = @reminder - 3600
+      puts "[#{Time.now}] Quiet hours: Reminded player: #{player_name(current_player_id)}"
+    end
   else
     puts "[#{Time.now}] Current player: #{player_name(current_player_id)}"
   end
@@ -253,9 +327,9 @@ while true do
     puts e.message
     puts e.backtrace.inspect
   else
+    # Debugging
+    exit 0 if ARGV[0]
     sleep @interval
     @timer += @interval
   end
-  # Debugging
-  #exit 0
 end
