@@ -33,6 +33,7 @@ end
 @new_reminder      = @config['new_reminder']       || 3600
 @token             = @config['token']
 @quiet_hours       = @config['quiet_hours']        || ['21:00', '9:00']
+@quiet_weekend     = @config['quiet_weekend']      || true
 @tz                = @config['timezone']           || '-04:00'
 
 @breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
@@ -45,16 +46,21 @@ end
 def quiet_hours?
   ret = false
   now = Time.now.getlocal(@tz)
-  @quiet_hours.flatten.each_slice(2) do |hours|
-    qstart = hours.first
-    qend   = hours.last
-    if Time.parse("#{qstart} #{@tz}") > Time.parse("#{qend} #{@tz}")
-      if ( now > Time.parse("#{qstart} #{@tz}") && now < Time.parse("24:00 #{@tz}") ) || ( now > Time.parse("0:00 #{@tz}") && now < Time.parse("#{qend} #{@tz}") )
-        ret = true
-      end
-    else
-      if ( now > Time.parse("#{qstart} #{@tz}") && now < Time.parse("#{qend} #{@tz}") )
-        ret = true
+  if @quiet_weekend
+    ret = (now.saturday? || now.sunday?) ? true : false
+  end
+  unless ret
+    @quiet_hours.flatten.each_slice(2) do |hours|
+      qstart = hours.first
+      qend   = hours.last
+      if Time.parse("#{qstart} #{@tz}") > Time.parse("#{qend} #{@tz}")
+        if ( now > Time.parse("#{qstart} #{@tz}") && now < Time.parse("24:00 #{@tz}") ) || ( now > Time.parse("0:00 #{@tz}") && now < Time.parse("#{qend} #{@tz}") )
+          ret = true
+        end
+      else
+        if ( now > Time.parse("#{qstart} #{@tz}") && now < Time.parse("#{qend} #{@tz}") )
+          ret = true
+        end
       end
     end
   end
@@ -137,8 +143,9 @@ def parse_html(html)
 end
 
 def find_mention(player)
-  if @config['mentions'][player]
-    "<@#{@config['mentions'][player]}>"
+   if m = @config['mentions'][player]
+     id = @uids.select { |u| u['name'] == m }.first['id']
+     "<@#{id}>"
   else
     player
   end
@@ -149,8 +156,9 @@ def notify_chat(player, score=false)
     config.token = @token
   end
 
-  client = Slack::Client.new
-  text   = "It's #{find_mention(player)}'s turn on BreakBase: #{@breakbase_url}"
+  client   = Slack::Client.new
+  @uids  ||= client.users_list['members']
+  text     = "It's #{find_mention(player)}'s turn on BreakBase: #{@breakbase_url}"
 
   message = {
     :channel  => @channel,
@@ -177,7 +185,7 @@ def notify_chat(player, score=false)
           'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
           'text'       => "#{previous} passed.",
           'color'      => 'bad',
-          'title'      => 'BreakBase',
+          'title'      => 'Pass',
           'title_link' => @breakbase_url,
 
         }
@@ -201,7 +209,7 @@ def notify_chat(player, score=false)
           'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
           'text'       => "#{previous} swapped #{num_letters} letter#{plural}.",
           'color'      => 'bad',
-          'title'      => 'BreakBase',
+          'title'      => 'Swap',
           'title_link' => @breakbase_url,
 
         }
@@ -227,7 +235,7 @@ def notify_chat(player, score=false)
           'pretext'    => "It's #{find_mention(player)}'s turn on BreakBase.",
           'text'       => "#{previous} played #{words_s} for #{points} points.",
           'color'      => 'good',
-          'title'      => 'BreakBase',
+          'title'      => 'Next turn',
           'title_link' => @breakbase_url,
           'thumb_url'  => "http://whatsaranjit.com/letters.php?text=#{words_a.first[0].upcase}"
 
@@ -246,12 +254,30 @@ def notify_chat(player, score=false)
   @timer = 0
 end
 
+def game_score
+  ret = Array.new
+  begin
+    sorted = @game_hash['game']['end_data'].sort_by { |id, score| -score }
+    ret = sorted.map do |rank|
+      if rank == sorted.first
+        "*#{player_name(rank[0])}: #{rank[1]}*"
+      else
+        "#{player_name(rank[0])}: #{rank[1]}"
+      end
+    end
+  rescue
+    puts "[#{Time.now}] End_data does not exist"
+  end
+  ret.join("\n")
+end
+
 def notify_new
   Slack.configure do |config|
     config.token = @token
   end
 
   client     = Slack::Client.new
+  @uids    ||= client.users_list['members']
   list_ids   = @game_hash['seated'] - @game_hash['request']['responses']
   list_names = ''
 
@@ -263,8 +289,22 @@ def notify_new
     :channel  => @channel,
     :username => 'Breakbase',
     :icon_url => 'https://pbs.twimg.com/profile_images/1364067224/icon.jpg',
-    :text     => "New game on BreakBase: #{@breakbase_url}#{list_names}",
   }
+
+  message_raw = [
+    {
+      'fallback'   => "New game on BreakBase: #{@breakbase_url}#{list_names}",
+      'pretext'    => "New game on BreakBase: #{@breakbase_url}#{list_names}",
+      'text'       => game_score,
+      'color'      => 'bad',
+      'title'      => 'Game Score',
+      'title_link' => @breakbase_url,
+
+    }
+  ]
+
+  message[:text]        = ''
+  message[:attachments] = message_raw.to_json
 
   client.chat_postMessage(message)
   @timer = 1
