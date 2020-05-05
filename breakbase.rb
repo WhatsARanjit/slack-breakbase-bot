@@ -36,8 +36,10 @@ end
 @quiet_weekend     = @config['quiet_weekend']      || true
 @tz                = @config['timezone']           || '-04:00'
 
-@breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
-@breakbase_enter   = "http://breakbase.com/room/#{@breakbase_game_id}/enter"
+#@breakbase_url     = "http://breakbase.com/#{@breakbase_game_id}"
+@breakbase_url     = "http://legacy.breakbase.com/#{@breakbase_game_id}"
+#@breakbase_enter   = "http://breakbase.com/room/#{@breakbase_game_id}/enter"
+@breakbase_enter   = "http://legacy.breakbase.com/room/#{@breakbase_game_id}/enter"
 @breakbase_cookie  = set_cookie
 @game_hash         = {}
 @current_player    = ''
