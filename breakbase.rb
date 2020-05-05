@@ -259,7 +259,7 @@ def game_score
   begin
     sorted = @game_hash['game']['end_data'].sort_by { |id, score| -score }
     ret = sorted.map do |rank|
-      if rank == sorted.first
+      if rank[1] == sorted.first[1]
         "*#{player_name(rank[0])}: #{rank[1]}*"
       else
         "#{player_name(rank[0])}: #{rank[1]}"
@@ -368,7 +368,7 @@ while true do
     puts e.backtrace.inspect
   else
     # Debugging
-    exit 0 if ARGV[0]
+    #exit 0 if ARGV[0]
     sleep @interval
     @timer += @interval
   end
