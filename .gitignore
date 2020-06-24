@@ -3,3 +3,4 @@ vendor/
 Gemfile.lock
 cookie.txt
 config.yaml
+nohup.out
